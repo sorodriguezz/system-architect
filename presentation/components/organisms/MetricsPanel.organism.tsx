@@ -7,6 +7,7 @@ import { NodeStatus } from '@/domain/constants/NodeTypes.constant';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid
 } from 'recharts';
+import { formatNumber, formatLatency } from '@/lib/formatNumber';
 import * as Icons from 'lucide-react';
 
 const CustomTooltip = ({ active, payload }: any) => {
@@ -114,20 +115,22 @@ export function MetricsPanel() {
 
       {/* KPI grid */}
       <div className="grid grid-cols-2 gap-2">
-        <StatCard label="Total RPS"    value={m.totalRps >= 1000 ? `${(m.totalRps/1000).toFixed(1)}K` : Math.round(m.totalRps)}
+        <StatCard label="Total RPS"    value={formatNumber(m.totalRps)}
           color="#6366f1" icon={<Icons.Activity size={12} />} />
-        <StatCard label="Avg Latency"  value={Math.round(m.avgLatency)} unit="ms"  color="#06b6d4" icon={<Icons.Timer size={12} />} />
-        <StatCard label="P95 Latency"  value={Math.round(m.p95Latency)} unit="ms"  color="#8b5cf6" sublabel="95th percentile" />
-        <StatCard label="Error Rate"   value={m.errorRate.toFixed(2)}   unit="%"
+        <StatCard label="Avg Latency"  value={formatLatency(m.avgLatency)}
+          color="#06b6d4" icon={<Icons.Timer size={12} />} />
+        <StatCard label="P95 Latency"  value={formatLatency(m.p95Latency)} sublabel="95th percentile"
+          color="#8b5cf6" />
+        <StatCard label="Error Rate"   value={`${(Number.isFinite(m.errorRate) ? m.errorRate : 0).toFixed(2)}%`}
           color={m.errorRate > 5 ? '#ef4444' : m.errorRate > 1 ? '#f59e0b' : '#22c55e'}
           icon={<Icons.AlertTriangle size={12} />} />
-        <StatCard label="Cost / Hour"  value={`$${m.costPerHour.toFixed(2)}`} color="#4ade80"
-          sublabel={`$${(m.costPerHour * 24 * 30).toFixed(0)}/mo`} icon={<Icons.DollarSign size={12} />} />
-        <StatCard label="Throughput"   value={m.totalThroughput.toFixed(1)} unit="MB/s" color="#f97316" icon={<Icons.Waves size={12} />} />
+        <StatCard label="Cost / Hour"  value={`$${(Number.isFinite(m.costPerHour) ? m.costPerHour : 0).toFixed(2)}`} color="#4ade80"
+          sublabel={`$${(Number.isFinite(m.costPerHour) ? m.costPerHour * 24 * 30 : 0).toFixed(0)}/mo`} icon={<Icons.DollarSign size={12} />} />
+        <StatCard label="Throughput"   value={`${(Number.isFinite(m.totalThroughput) ? m.totalThroughput : 0).toFixed(1)} MB/s`} color="#f97316" icon={<Icons.Waves size={12} />} />
       </div>
 
       <div className="grid grid-cols-2 gap-2">
-        <StatCard label="Connections" value={m.activeConnections.toLocaleString()} color="#22d3ee" icon={<Icons.Network size={12} />} />
+        <StatCard label="Connections" value={formatNumber(m.activeConnections)} color="#22d3ee" icon={<Icons.Network size={12} />} />
         <StatCard label="Sim Time"    value={Math.floor(simulationConfig.time / 60)} unit="min"
           color="#94a3b8" sublabel={`${simulationConfig.speed}× speed`} icon={<Icons.Clock size={12} />} />
       </div>

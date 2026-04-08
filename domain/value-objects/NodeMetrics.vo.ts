@@ -44,7 +44,11 @@ export const NodeMetrics = {
    * Prevents jarring metric jumps in the UI.
    */
   smooth(previous: NodeMetrics, next: NodeMetrics, alpha: number): NodeMetrics {
-    const blend = (a: number, b: number): number => a * (1 - alpha) + b * alpha;
+    // NaN-safe EMA blend: if either operand is NaN/Infinity, fallback to next.
+    const blend = (a: number, b: number): number => {
+      const result = a * (1 - alpha) + b * alpha;
+      return Number.isFinite(result) ? result : (Number.isFinite(b) ? b : 0);
+    };
     return {
       rps:         blend(previous.rps,         next.rps),
       latency:     blend(previous.latency,      next.latency),
@@ -53,7 +57,7 @@ export const NodeMetrics = {
       memoryLoad:  blend(previous.memoryLoad,   next.memoryLoad),
       connections: Math.floor(blend(previous.connections, next.connections)),
       throughput:  blend(previous.throughput,   next.throughput),
-      uptime:      next.uptime,
+      uptime:      Number.isFinite(next.uptime) ? next.uptime : 0,
     };
   },
 } as const;

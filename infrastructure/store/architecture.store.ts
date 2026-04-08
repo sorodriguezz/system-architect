@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { createNodesSlice, NodesSlice } from './slices/nodes.slice';
 import { createEdgesSlice, EdgesSlice } from './slices/edges.slice';
 import { createSimulationSlice, SimulationSlice } from './slices/simulation.slice';
+import { createEventLogSlice, EventLogSlice } from './slices/eventlog.slice';
 
 import { IArchitectureRepository } from '@/domain/repositories/IArchitectureRepository';
 import { NodeEntity, Position } from '@/domain/entities/Node.entity';
@@ -17,7 +18,8 @@ import { NodeMetrics } from '@/domain/value-objects/NodeMetrics.vo';
 import { addNode as addNodeUseCase }               from '@/application/use-cases/node/AddNode.usecase';
 import { removeNode as removeNodeUseCase }         from '@/application/use-cases/node/RemoveNode.usecase';
 import { killNode, restoreNode, overloadNode, duplicateNode } from '@/application/use-cases/node/ChaosNode.usecase';
-import { tickSimulation }                          from '@/application/use-cases/simulation/TickSimulation.usecase';
+import { tickSimulation, resetTickState }           from '@/application/use-cases/simulation/TickSimulation.usecase';
+import { SimulationEvent } from '@/domain/entities/SimulationEvent.entity';
 import { autoLayout as autoLayoutUseCase }         from '@/application/use-cases/layout/AutoLayout.usecase';
 import { loadDefaultArchitecture as loadDefaultUseCase } from '@/application/use-cases/layout/LoadDefaultArchitecture.usecase';
 
@@ -26,7 +28,8 @@ import { loadDefaultArchitecture as loadDefaultUseCase } from '@/application/use
 export type ArchitectureStore =
   NodesSlice &
   EdgesSlice &
-  SimulationSlice & {
+  SimulationSlice &
+  EventLogSlice & {
     // High-level commands (delegate to use cases)
     addNode(type: NodeType, position: Position, label?: string): void;
     removeNode(id: string): void;
@@ -99,6 +102,7 @@ export const useArchitectureStore = create<ArchitectureStore>((set, get) => {
     ...createNodesSlice(set),
     ...createEdgesSlice(set),
     ...createSimulationSlice(set),
+    ...createEventLogSlice(set),
 
     // ── Node commands ───────────────────────────────────────────────────────────
     addNode(type, position, label) {
@@ -139,6 +143,11 @@ export const useArchitectureStore = create<ArchitectureStore>((set, get) => {
       stopTicker();
       get()._setSimulationConfig({ isRunning: true });
 
+      get()._appendEvent(SimulationEvent.create(
+        get().simulationConfig.time, 'SIMULATION_START', 'info',
+        `Simulation started at ${get().simulationConfig.trafficLevel}% traffic`,
+      ));
+
       _tickerInterval = setInterval(() => {
         const { simulationConfig } = get();
         if (!simulationConfig.isRunning) return;
@@ -153,18 +162,29 @@ export const useArchitectureStore = create<ArchitectureStore>((set, get) => {
         get()._setGlobalMetrics(result.globalMetrics);
         get()._appendHistory(result.historyPoint);
         get()._setSimulationConfig({ time: result.nextTime });
+
+        // Append simulation events (crashes, scaling, status changes)
+        if (result.events.length > 0) {
+          get()._appendEvents(result.events);
+        }
       }, 500);
     },
 
     stopSimulation() {
       stopTicker();
+      get()._appendEvent(SimulationEvent.create(
+        get().simulationConfig.time, 'SIMULATION_STOP', 'info',
+        'Simulation stopped',
+      ));
       get()._setSimulationConfig({ isRunning: false });
     },
 
     resetSimulation() {
       stopTicker();
+      resetTickState();
       get()._setSimulationConfig({ isRunning: false, time: 0 });
       get()._clearHistory();
+      get()._clearEvents();
       get()._setGlobalMetrics(GlobalMetrics.zero());
 
       const resetNodes = repository.getAllNodes().map(n =>
@@ -203,12 +223,14 @@ export const useArchitectureStore = create<ArchitectureStore>((set, get) => {
 
     clearAll() {
       stopTicker();
+      resetTickState();
       repository.replaceAllNodes([]);
       repository.replaceAllEdges([]);
       repository.setSelectedNodeId(null);
       repository.setSelectedEdgeId(null);
       get()._setSimulationConfig({ isRunning: false, time: 0 });
       get()._clearHistory();
+      get()._clearEvents();
       get()._setGlobalMetrics(GlobalMetrics.zero());
     },
 

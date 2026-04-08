@@ -112,7 +112,7 @@ export const NodeEntity = {
     if (node.status === NodeStatus.DOWN) return NodeStatus.DOWN;
     if (node.isChaosActive)             return NodeStatus.DEGRADED;
     if (cpuLoad > 95)                   return NodeStatus.OVERLOADED;
-    if (cpuLoad > 70 || errorRate > 10) return NodeStatus.DEGRADED;
+    if (cpuLoad > 75 || errorRate > 10) return NodeStatus.DEGRADED;
     return NodeStatus.HEALTHY;
   },
 } as const;

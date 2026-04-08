@@ -19,6 +19,7 @@ import { ComponentLibrary } from './ComponentLibrary.organism';
 import { ConfigPanel } from './ConfigPanel.organism';
 import { MetricsPanel } from './MetricsPanel.organism';
 import { InsightsPanel } from './InsightsPanel.organism';
+import { EventLogPanel } from './EventLogPanel.organism';
 import * as Icons from 'lucide-react';
 
 // ── ReactFlow registries ────────────────────────────────────────────────────
@@ -63,7 +64,7 @@ export function ArchitectureCanvas() {
   const selectEdge      = useArchitectureStore(s => s.selectEdge);
 
   const [leftOpen,  setLeftOpen]  = useState(true);
-  const [rightTab,  setRightTab]  = useState<'config' | 'metrics' | 'insights'>('config');
+  const [rightTab,  setRightTab]  = useState<'config' | 'metrics' | 'insights' | 'events'>('config');
 
   const onDragStart = useCallback((e: React.DragEvent, type: string) => {
     e.dataTransfer.setData('application/reactflow', type);
@@ -310,6 +311,7 @@ export function ArchitectureCanvas() {
             {rightTab === 'config'   && <ConfigPanel />}
             {rightTab === 'metrics'  && <MetricsPanel />}
             {rightTab === 'insights' && <InsightsPanel />}
+            {rightTab === 'events'   && <EventLogPanel />}
           </div>
         </div>
       </div>
@@ -332,19 +334,20 @@ function ChaosChip() {
 }
 
 function RightPanelTabs({ activeTab, hasSelection, isRunning, onChange }: {
-  activeTab: 'config' | 'metrics' | 'insights';
+  activeTab: 'config' | 'metrics' | 'insights' | 'events';
   hasSelection: boolean;
   isRunning: boolean;
-  onChange: (t: 'config' | 'metrics' | 'insights') => void;
+  onChange: (t: 'config' | 'metrics' | 'insights' | 'events') => void;
 }) {
   const nodes    = useArchitectureStore(s => s.nodes);
   const edges    = useArchitectureStore(s => s.edges);
+  const events   = useArchitectureStore(s => s.events);
   const alerts   = React.useMemo(() => {
-    // Lazy import to avoid circular — we only need the count
     const { runAdvisor } = require('@/domain/services/ArchitectureAdvisor.service');
     return runAdvisor(nodes, edges);
   }, [nodes, edges]);
   const criticals = alerts.filter((a: any) => a.severity === 'critical').length;
+  const crashCount = events.filter((e: any) => e.severity === 'critical').length;
 
   return (
     <div
@@ -372,6 +375,15 @@ function RightPanelTabs({ activeTab, hasSelection, isRunning, onChange }: {
         active={activeTab === 'insights'}
         badge={criticals > 0 ? criticals : undefined}
         onClick={() => onChange('insights')}
+      />
+      <TabButton
+        label="Events"
+        icon={<Icons.ScrollText size={11} />}
+        active={activeTab === 'events'}
+        badge={crashCount > 0 ? crashCount : undefined}
+        dot={isRunning ? '#f59e0b' : undefined}
+        pulse={isRunning}
+        onClick={() => onChange('events')}
       />
     </div>
   );

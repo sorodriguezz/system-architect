@@ -6,6 +6,7 @@ import { NodeEntity } from '@/domain/entities/Node.entity';
 import { NodeStatus } from '@/domain/constants/NodeTypes.constant';
 import { SimulationConstants } from '@/domain/constants/SimulationConstants.constant';
 import { MetricBar } from '@/presentation/components/atoms/MetricBar.atom';
+import { formatNumber, formatLatency } from '@/lib/formatNumber';
 import * as Icons from 'lucide-react';
 
 // ── Status styling maps ────────────────────────────────────────────────────────
@@ -50,42 +51,78 @@ function NodeBadge({ text, variant }: { text: string; variant: 'spof' | 'chaos' 
 }
 
 function LiveMetrics({ entity, color }: { entity: NodeEntity; color: string }) {
-  const { metrics, config, status } = entity;
+  const { metrics, config, status, type } = entity;
   if (status === NodeStatus.DOWN) return (
-    <div className="mt-2 text-center text-xs text-gray-500 font-mono">■ OFFLINE</div>
+    <div className="mt-2 space-y-1">
+      <div className="flex items-center justify-center gap-1.5">
+        <Icons.Skull size={14} style={{ color: '#ef4444', opacity: 0.8 }} />
+        <span className="text-xs font-bold font-mono" style={{ color: '#ef4444' }}>CRASHED</span>
+      </div>
+      <div className="text-center text-xs font-mono" style={{ color: 'rgba(255,255,255,0.2)', fontSize: 10 }}>
+        Service unavailable
+      </div>
+    </div>
   );
+
+  const isClient = type === 'client';
+
+  const safe = (v: number) => Number.isFinite(v) ? v : 0;
+
+  const latencyColor = metrics.latency > 500 ? '#ef4444'
+    : metrics.latency > 100 ? '#f59e0b'
+    : '#22c55e';
 
   return (
     <div className="space-y-1.5 mt-2">
       <div className="flex justify-between text-xs">
-        <span className="text-white/40">RPS</span>
-        <span className="text-white/80 font-mono">{Math.round(metrics.rps).toLocaleString()}</span>
+        <span className="text-white/40">{isClient ? 'Sending' : 'RPS'}</span>
+        <span className="text-white/80 font-mono">{formatNumber(safe(metrics.rps))}</span>
       </div>
       <MetricBar value={metrics.rps} max={config.maxRps * config.replicas} color={color} />
 
-      <div className="flex justify-between text-xs">
-        <span className="text-white/40">CPU</span>
-        <span
-          className="font-mono"
-          style={{ color: metrics.cpuLoad > 80 ? '#ef4444' : metrics.cpuLoad > 60 ? '#f59e0b' : '#22c55e' }}
-        >
-          {Math.round(metrics.cpuLoad)}%
-        </span>
-      </div>
-      <MetricBar
-        value={metrics.cpuLoad}
-        color={metrics.cpuLoad > 80 ? '#ef4444' : metrics.cpuLoad > 60 ? '#f59e0b' : '#22c55e'}
-      />
+      {!isClient && (
+        <>
+          <div className="flex justify-between text-xs">
+            <span className="text-white/40">CPU</span>
+            <span
+              className="font-mono"
+              style={{ color: metrics.cpuLoad > 80 ? '#ef4444' : metrics.cpuLoad > 60 ? '#f59e0b' : '#22c55e' }}
+            >
+              {Math.round(safe(metrics.cpuLoad))}%
+            </span>
+          </div>
+          <MetricBar
+            value={metrics.cpuLoad}
+            color={metrics.cpuLoad > 80 ? '#ef4444' : metrics.cpuLoad > 60 ? '#f59e0b' : '#22c55e'}
+          />
 
-      <div className="flex justify-between text-xs">
-        <span className="text-white/40">Latency</span>
-        <span className="text-white/80 font-mono">{Math.round(metrics.latency)}ms</span>
-      </div>
+          <div className="flex justify-between text-xs">
+            <span className="text-white/40">Latency</span>
+            <span className="font-mono" style={{ color: latencyColor }}>
+              {formatLatency(safe(metrics.latency))}
+            </span>
+          </div>
+        </>
+      )}
+
+      {isClient && (
+        <div className="flex justify-between text-xs">
+          <span className="text-white/40">Connections</span>
+          <span className="text-white/80 font-mono">{formatNumber(safe(metrics.connections))}</span>
+        </div>
+      )}
 
       {metrics.errorRate > 0.5 && (
         <div className="flex justify-between text-xs">
           <span className="text-white/40">Errors</span>
-          <span className="text-red-400 font-mono">{metrics.errorRate.toFixed(1)}%</span>
+          <span className="text-red-400 font-mono">{Number.isFinite(metrics.errorRate) ? metrics.errorRate.toFixed(1) : '0'}%</span>
+        </div>
+      )}
+
+      {config.autoscaling && config.replicas > 1 && (
+        <div className="flex justify-between text-xs">
+          <span className="text-white/40">Replicas</span>
+          <span className="text-blue-400 font-mono">×{config.replicas}</span>
         </div>
       )}
     </div>
@@ -124,16 +161,36 @@ function FlowNode({ data: rawData, selected }: FlowNodeProps) {
       />
 
       <div
-        className="relative rounded-xl border transition-all duration-200 overflow-hidden"
+        className={`relative rounded-xl border transition-all duration-200 overflow-hidden ${
+          entity.status === NodeStatus.DOWN ? 'animate-pulse' : ''
+        }`}
         style={{
-          background: 'linear-gradient(135deg, rgba(15,15,30,0.97) 0%, rgba(20,20,40,0.97) 100%)',
-          borderColor: selected ? color : 'rgba(255,255,255,0.1)',
-          boxShadow: selected
-            ? `0 0 0 2px ${color}, 0 8px 32px ${STATUS_GLOW[entity.status]}`
-            : `0 4px 16px rgba(0,0,0,0.4), 0 0 8px ${STATUS_GLOW[entity.status]}`,
+          background: entity.status === NodeStatus.DOWN
+            ? 'linear-gradient(135deg, rgba(30,10,10,0.97) 0%, rgba(20,10,15,0.97) 100%)'
+            : entity.status === NodeStatus.OVERLOADED
+              ? 'linear-gradient(135deg, rgba(25,12,12,0.97) 0%, rgba(20,20,40,0.97) 100%)'
+              : 'linear-gradient(135deg, rgba(15,15,30,0.97) 0%, rgba(20,20,40,0.97) 100%)',
+          borderColor: entity.status === NodeStatus.DOWN
+            ? 'rgba(239,68,68,0.4)'
+            : entity.status === NodeStatus.OVERLOADED
+              ? 'rgba(239,68,68,0.3)'
+              : selected ? color : 'rgba(255,255,255,0.1)',
+          boxShadow: entity.status === NodeStatus.DOWN
+            ? '0 0 20px rgba(239,68,68,0.25), 0 0 60px rgba(239,68,68,0.08)'
+            : entity.status === NodeStatus.OVERLOADED
+              ? `0 0 16px rgba(239,68,68,0.15), 0 4px 16px rgba(0,0,0,0.4)`
+              : selected
+                ? `0 0 0 2px ${color}, 0 8px 32px ${STATUS_GLOW[entity.status]}`
+                : `0 4px 16px rgba(0,0,0,0.4), 0 0 8px ${STATUS_GLOW[entity.status]}`,
         }}
       >
-        <div className="h-0.5 w-full" style={{ background: `linear-gradient(90deg, ${color}, transparent)` }} />
+        <div className="h-0.5 w-full" style={{
+          background: entity.status === NodeStatus.DOWN
+            ? 'linear-gradient(90deg, #ef4444, #991b1b, transparent)'
+            : entity.status === NodeStatus.OVERLOADED
+              ? 'linear-gradient(90deg, #ef4444, #f59e0b, transparent)'
+              : `linear-gradient(90deg, ${color}, transparent)`,
+        }} />
 
         {/* Badges */}
         <div className="absolute top-1.5 right-1.5 z-10 flex gap-1">

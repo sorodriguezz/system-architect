@@ -12,6 +12,7 @@ import { Toggle } from '@/presentation/components/atoms/Toggle.atom';
 import { Select } from '@/presentation/components/atoms/Select.atom';
 import { NumberInput } from '@/presentation/components/atoms/NumberInput.atom';
 import { FormRow } from '@/presentation/components/molecules/FormRow.molecule';
+import { formatNumber, formatLatency } from '@/lib/formatNumber';
 import * as Icons from 'lucide-react';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -202,14 +203,18 @@ export function ConfigPanel() {
         )}
 
         {/* Live metrics row */}
-        {entity.metrics.rps > 0 && (
-          <div className="flex gap-1.5 mb-3">
-            <MetricBadge label="RPS"     value={entity.metrics.rps >= 1000 ? `${(entity.metrics.rps/1000).toFixed(1)}K` : Math.round(entity.metrics.rps).toString()} color="#818cf8" />
-            <MetricBadge label="Latency" value={`${Math.round(entity.metrics.latency)}ms`} color={entity.metrics.latency > 500 ? '#f87171' : entity.metrics.latency > 100 ? '#fbbf24' : '#4ade80'} />
-            <MetricBadge label="CPU"     value={`${Math.round(entity.metrics.cpuLoad)}%`}  color={entity.metrics.cpuLoad > 80 ? '#f87171' : entity.metrics.cpuLoad > 60 ? '#fbbf24' : '#4ade80'} />
-            <MetricBadge label="Errors"  value={`${entity.metrics.errorRate.toFixed(1)}%`} color={entity.metrics.errorRate > 5 ? '#f87171' : entity.metrics.errorRate > 1 ? '#fbbf24' : '#4ade80'} />
-          </div>
-        )}
+        {entity.metrics.rps > 0 && (() => {
+          const isClient = entity.type === 'client';
+          const safeErr = Number.isFinite(entity.metrics.errorRate) ? entity.metrics.errorRate : 0;
+          return (
+            <div className="flex gap-1.5 mb-3">
+              <MetricBadge label="RPS" value={formatNumber(entity.metrics.rps)} color="#818cf8" />
+              {!isClient && <MetricBadge label="Latency" value={formatLatency(entity.metrics.latency)} color={entity.metrics.latency > 500 ? '#f87171' : entity.metrics.latency > 100 ? '#fbbf24' : '#4ade80'} />}
+              <MetricBadge label="CPU" value={`${Math.round(Number.isFinite(entity.metrics.cpuLoad) ? entity.metrics.cpuLoad : 0)}%`} color={entity.metrics.cpuLoad > 80 ? '#f87171' : entity.metrics.cpuLoad > 60 ? '#fbbf24' : '#4ade80'} />
+              <MetricBadge label="Errors" value={`${safeErr.toFixed(1)}%`} color={safeErr > 5 ? '#f87171' : safeErr > 1 ? '#fbbf24' : '#4ade80'} />
+            </div>
+          );
+        })()}
 
         {/* ── General config ─────────────────────────────────────────── */}
         <Section title="Capacity & Scaling">

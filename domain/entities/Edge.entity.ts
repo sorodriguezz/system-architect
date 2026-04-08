@@ -13,6 +13,8 @@ export interface EdgeEntity {
   readonly protocol: EdgeProtocol;
   readonly isEncrypted: boolean;
   readonly trafficPercentage: number; // 0–100, derived during simulation
+  readonly rpsOnEdge: number;         // Actual RPS flowing through this edge
+  readonly targetLatencyMs: number;   // Latency of target node (ms) — drives particle speed
 }
 
 let _edgeCounter = 0;
@@ -39,6 +41,8 @@ export const EdgeEntity = {
       protocol:           params.protocol    ?? EdgeProtocol.HTTP,
       isEncrypted:        params.isEncrypted ?? false,
       trafficPercentage:  0,
+      rpsOnEdge:          0,
+      targetLatencyMs:    0,
     };
   },
 
@@ -54,5 +58,22 @@ export const EdgeEntity = {
    */
   withTraffic(edge: EdgeEntity, trafficPercentage: number): EdgeEntity {
     return { ...edge, trafficPercentage: Math.max(0, Math.min(100, trafficPercentage)) };
+  },
+
+  /**
+   * Returns a new edge with full simulation metadata applied.
+   */
+  withSimulationData(
+    edge: EdgeEntity,
+    trafficPercentage: number,
+    rpsOnEdge: number,
+    targetLatencyMs: number,
+  ): EdgeEntity {
+    return {
+      ...edge,
+      trafficPercentage: Math.max(0, Math.min(100, trafficPercentage)),
+      rpsOnEdge:         Math.max(0, rpsOnEdge),
+      targetLatencyMs:   Math.max(0, targetLatencyMs),
+    };
   },
 } as const;

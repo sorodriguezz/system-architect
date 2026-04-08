@@ -513,14 +513,181 @@ const RULES: Rule[] = [
     };
   },
 
-  // ── R17 — All-green during simulation (positive feedback) ────────────────────
+  // ── R17 — Bottleneck detection ────────────────────────────────────────────────
+  (nodes, edges) => {
+    const active = nodes.filter(n =>
+      n.metrics.rps > 0 &&
+      n.status !== 'down' &&
+      n.type !== NodeType.CLIENT &&
+      n.type !== NodeType.MONITOR
+    );
+    if (active.length < 2) return null;
+
+    // Find the node with highest CPU that has downstream dependents
+    const withDownstream = active.filter(n =>
+      edges.some(e => e.sourceId === n.id)
+    );
+    if (withDownstream.length === 0) return null;
+
+    const bottleneck = withDownstream.reduce((a, b) =>
+      a.metrics.cpuLoad > b.metrics.cpuLoad ? a : b
+    );
+
+    if (bottleneck.metrics.cpuLoad < 60) return null;
+
+    const utilizationPct = Math.round(bottleneck.metrics.cpuLoad);
+    const capacityLeft = Math.round(
+      (bottleneck.config.maxRps * bottleneck.config.replicas) - bottleneck.metrics.rps
+    );
+
+    return {
+      id: 'R17_BOTTLENECK',
+      severity: utilizationPct > 85 ? 'critical' : 'warning',
+      category: 'performance',
+      title: `Bottleneck: ${bottleneck.label} at ${utilizationPct}% CPU`,
+      description:
+        `"${bottleneck.label}" (${bottleneck.type}) is the most loaded node with downstream dependencies. ` +
+        `At ${utilizationPct}% CPU it has ~${capacityLeft} RPS capacity remaining before degradation. ` +
+        `This node constrains your entire system throughput.`,
+      affectedIds: [bottleneck.id],
+      fix: [
+        `Scale "${bottleneck.label}" from ${bottleneck.config.replicas} to ${bottleneck.config.replicas + 2} replicas`,
+        'Enable Auto-Scaling with target CPU 60%, min replicas 2',
+        'Profile this service for hot code paths — optimize the top 3 slowest endpoints',
+        'Add a Cache layer upstream to absorb repeat requests before they hit this node',
+      ],
+    };
+  },
+
+  // ── R18 — Capacity planning: what breaks at 2× traffic ─────────────────────
+  (nodes) => {
+    const active = nodes.filter(n =>
+      n.metrics.rps > 0 &&
+      n.status !== 'down' &&
+      n.type !== NodeType.CLIENT
+    );
+    if (active.length < 2) return null;
+
+    // Project: at 2× current traffic, which nodes exceed capacity?
+    const wouldBreak = active.filter(n => {
+      const projectedRps = n.metrics.rps * 2;
+      const capacity = n.config.maxRps * n.config.replicas;
+      return projectedRps > capacity * 0.85;
+    });
+
+    if (wouldBreak.length === 0) return null;
+
+    const names = wouldBreak.map(n => `"${n.label}"`).join(', ');
+    return {
+      id: 'R18_CAPACITY_2X',
+      severity: 'warning',
+      category: 'scalability',
+      title: `${wouldBreak.length} node(s) would fail at 2× traffic`,
+      description:
+        `If traffic doubles, these nodes exceed 85% capacity: ${names}. ` +
+        'Plan scaling actions before your next traffic spike (marketing campaign, product launch, etc.).',
+      affectedIds: wouldBreak.map(n => n.id),
+      fix: [
+        'Enable Auto-Scaling on all flagged nodes with maxReplicas ≥ 4',
+        'Pre-warm instances before expected traffic surges',
+        'Set up CPU-based scaling alarms at 60% (not 80% — scaling takes 2-5 minutes)',
+        'Consider vertical scaling (larger instance type) for database nodes',
+      ],
+    };
+  },
+
+  // ── R19 — High latency nodes ────────────────────────────────────────────────
+  (nodes) => {
+    const slow = nodes.filter(n =>
+      n.metrics.latency > 200 &&
+      n.status !== 'down' &&
+      n.metrics.rps > 0 &&
+      n.type !== NodeType.CLIENT
+    );
+    if (slow.length === 0) return null;
+    return {
+      id: 'R19_HIGH_LATENCY',
+      severity: slow.some(n => n.metrics.latency > 1000) ? 'critical' : 'warning',
+      category: 'performance',
+      title: `${slow.length} node(s) with latency >200ms`,
+      description:
+        slow.map(n =>
+          `"${n.label}": ${Math.round(n.metrics.latency)}ms`
+        ).join(' · ') +
+        '. High latency propagates downstream — every caller waits at least this long per request.',
+      affectedIds: slow.map(n => n.id),
+      fix: [
+        'Scale up replicas to reduce per-instance load',
+        'Add caching to reduce database/API round-trips',
+        'Optimize queries — check for missing indexes (EXPLAIN ANALYZE)',
+        'Move expensive operations to async workers via a Queue',
+      ],
+    };
+  },
+
+  // ── R20 — Auto-scaling recommendation ──────────────────────────────────────
+  (nodes) => {
+    const noAutoscale = nodes.filter(n =>
+      !n.config.autoscaling &&
+      n.metrics.cpuLoad > 50 &&
+      n.status !== 'down' &&
+      n.type !== NodeType.CLIENT &&
+      n.type !== NodeType.MONITOR &&
+      n.config.replicas <= 2
+    );
+    if (noAutoscale.length === 0) return null;
+    return {
+      id: 'R20_ENABLE_AUTOSCALING',
+      severity: 'info',
+      category: 'scalability',
+      title: `${noAutoscale.length} busy node(s) without Auto-Scaling`,
+      description:
+        'These nodes are above 50% CPU with static replicas. Auto-Scaling would automatically add capacity during traffic spikes and save money during quiet periods.',
+      affectedIds: noAutoscale.map(n => n.id),
+      fix: [
+        'Enable Auto-Scaling in the Config panel for each node',
+        'Set min replicas = 2 (for high availability)',
+        'Set max replicas = 8–12 (cost ceiling)',
+        'Target CPU utilization: 60% for latency-sensitive, 75% for batch workers',
+      ],
+    };
+  },
+
+  // ── R21 — Cost vs. idle capacity analysis ──────────────────────────────────
+  (nodes) => {
+    const idleNodes = nodes.filter(n =>
+      n.metrics.rps === 0 &&
+      n.status !== 'down' &&
+      n.type !== NodeType.CLIENT &&
+      n.type !== NodeType.MONITOR &&
+      n.config.replicas >= 1
+    );
+    if (idleNodes.length === 0) return null;
+    return {
+      id: 'R21_IDLE_NODES',
+      severity: 'info',
+      category: 'cost',
+      title: `${idleNodes.length} provisioned node(s) receiving 0 traffic`,
+      description:
+        'These nodes are running but not receiving any requests. They may be disconnected from the traffic path, or the topology may need review.',
+      affectedIds: idleNodes.map(n => n.id),
+      fix: [
+        'Verify edges connect these nodes to the traffic flow (from Users downstream)',
+        'Check that edge directions are correct (arrow should point FROM source TO target)',
+        'If intentionally idle (standby), consider scaling to 0 replicas to save cost',
+        'Use the simulation to verify traffic reaches these nodes at various load levels',
+      ],
+    };
+  },
+
+  // ── R22 — All-green during simulation (positive feedback) ────────────────────
   (nodes) => {
     const active = nodes.filter(n => n.metrics.rps > 0);
     if (active.length < 3) return null;
     const allHealthy = active.every(n => n.status === 'healthy' && n.metrics.errorRate < 0.5);
     if (!allHealthy) return null;
     return {
-      id: 'R17_ALL_HEALTHY',
+      id: 'R22_ALL_HEALTHY',
       severity: 'success',
       category: 'reliability',
       title: 'Architecture is healthy under current load',
