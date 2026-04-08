@@ -1,0 +1,115 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #0a0a0f;
+  --foreground: #e2e8f0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--background);
+  color: var(--foreground);
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* React Flow overrides */
+.react-flow__background {
+  background: #0a0a0f !important;
+}
+
+.react-flow__minimap {
+  background: rgba(15, 15, 26, 0.95) !important;
+  border: 1px solid rgba(255,255,255,0.05) !important;
+  border-radius: 8px !important;
+}
+
+.react-flow__minimap-mask {
+  fill: rgba(99, 102, 241, 0.15) !important;
+}
+
+.react-flow__controls {
+  background: rgba(15, 15, 26, 0.95) !important;
+  border: 1px solid rgba(255,255,255,0.05) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5) !important;
+}
+
+.react-flow__controls-button {
+  background: transparent !important;
+  border: none !important;
+  color: rgba(255,255,255,0.5) !important;
+  fill: rgba(255,255,255,0.5) !important;
+}
+
+.react-flow__controls-button:hover {
+  background: rgba(255,255,255,0.05) !important;
+  color: white !important;
+  fill: white !important;
+}
+
+.react-flow__edge-path {
+  transition: stroke-width 0.3s;
+}
+
+.react-flow__attribution {
+  display: none;
+}
+
+.react-flow__handle {
+  transition: all 0.15s;
+}
+
+/* Dash flow animation */
+@keyframes dashFlow {
+  from { stroke-dashoffset: 20; }
+  to { stroke-dashoffset: 0; }
+}
+
+/* Glow animation */
+@keyframes glow {
+  0%, 100% { box-shadow: 0 0 8px rgba(99,102,241,0.3); }
+  50% { box-shadow: 0 0 24px rgba(99,102,241,0.7), 0 0 48px rgba(99,102,241,0.3); }
+}
+
+/* Node drag transition */
+.react-flow__node {
+  transition: filter 0.15s;
+}
+.react-flow__node:hover {
+  filter: brightness(1.1);
+}
+
+/* Connection line */
+.react-flow__connection-line {
+  stroke: rgba(99,102,241,0.8) !important;
+  stroke-width: 2 !important;
+  stroke-dasharray: 5 3 !important;
+}
+
+/* Selection box */
+.react-flow__selection {
+  background: rgba(99,102,241,0.05) !important;
+  border: 1px solid rgba(99,102,241,0.4) !important;
+}
