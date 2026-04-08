@@ -7,9 +7,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "export": "next build && next export",
+    "export": "next build",
     "predeploy": "npm run export",
-    "deploy": "gh-pages -d out"
+    "deploy": "gh-pages -d out",
+    "deploy:docs": "npm run export && node scripts/deploy-to-docs.js"
   },
   "dependencies": {
     "@types/node": "^20.0.0",
