@@ -20,28 +20,53 @@ export const SimulationConstants = {
   MAX_HISTORY_POINTS: 60,
 
   // Base cost per hour multiplier (per replica)
+  // Sources: AWS on-demand pricing (us-east-1, Apr 2025), Cloudflare, Stripe
   COST_PER_HOUR_BY_TYPE: {
-    client:         0,
-    dns:            0.01,
-    cdn:            0.08,
-    waf:            0.05,
-    loadbalancer:   0.02,
-    apigateway:     0.04,
-    appserver:      0.10,
-    microservice:   0.08,
-    cache:          0.06,
-    database:       0.15,
-    queue:          0.04,
-    worker:         0.07,
-    storage:        0.02,
-    servicemesh:    0.03,
-    circuitbreaker: 0.01,
-    search:         0.12,
-    monitor:        0.05,
-    auth:           0.03,
-    email:          0.02,
-    payment:        0.05,
+    client:         0,       // no cost — user devices
+    dns:            0.01,    // Route53 ~$0.50/zone/mo + $0.40/M queries
+    cdn:            0.08,    // Cloudflare Pro/CloudFront ~$0.01–0.08/GB egress
+    waf:            0.05,    // AWS WAF ~$5/WebACL/mo + $1/M requests
+    loadbalancer:   0.02,    // AWS ALB ~$0.018/hr base
+    apigateway:     0.04,    // AWS API GW HTTP API ~$1/M calls
+    appserver:      0.10,    // EC2 t3.medium ~$0.0416/hr (2 replicas)
+    microservice:   0.08,    // ECS Fargate 0.25vCPU/0.5GB ~$0.013/hr
+    cache:          0.06,    // ElastiCache cache.t3.small ~$0.034/hr
+    database:       0.15,    // RDS db.t3.medium ~$0.068/hr
+    queue:          0.04,    // SQS ~$0.40/M msg or MSK ~$0.21/broker/hr
+    worker:         0.07,    // EC2 t3.small ~$0.021/hr or Lambda per usage
+    storage:        0.02,    // S3 ~$0.023/GB-mo + $0.09/GB egress
+    servicemesh:    0.03,    // Istio sidecar compute overhead per cluster
+    circuitbreaker: 0.01,    // library-level — minimal infra cost
+    search:         0.12,    // OpenSearch m5.large ~$0.12/hr
+    monitor:        0.05,    // Datadog ~$15/host/mo ≈ $0.021/hr
+    auth:           0.03,    // Auth0/Cognito ~$0.0055/MAU beyond free tier
+    email:          0.02,    // SES $0.10/1K emails + ~$0.12/GB attachments
+    payment:        0.05,    // Stripe infrastructure proxy (~2.9%+$0.30/txn billed separately)
   } as Record<string, number>,
+
+  // Short cost reference label per type (shown in UI)
+  COST_SOURCE_BY_TYPE: {
+    client:         'No infra cost',
+    dns:            'AWS Route 53',
+    cdn:            'Cloudflare / CloudFront',
+    waf:            'AWS WAF',
+    loadbalancer:   'AWS ALB',
+    apigateway:     'AWS API Gateway',
+    appserver:      'AWS EC2 t3.medium',
+    microservice:   'AWS ECS Fargate',
+    cache:          'AWS ElastiCache',
+    database:       'AWS RDS PostgreSQL',
+    queue:          'AWS SQS / MSK',
+    worker:         'AWS Lambda / EC2',
+    storage:        'AWS S3',
+    servicemesh:    'Istio sidecar overhead',
+    circuitbreaker: 'Library (no infra cost)',
+    search:         'AWS OpenSearch m5.large',
+    monitor:        'Datadog per host',
+    auth:           'Auth0 / AWS Cognito',
+    email:          'AWS SES',
+    payment:        'Stripe infrastructure proxy',
+  } as Record<string, string>,
 
   // Base latency in ms for each node type
   BASE_LATENCY_MS_BY_TYPE: {

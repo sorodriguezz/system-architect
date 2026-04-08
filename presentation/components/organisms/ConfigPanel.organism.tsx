@@ -164,6 +164,9 @@ export function ConfigPanel() {
       {/* ── Body ───────────────────────────────────────────────────────── */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '10px 12px' }}>
 
+        {/* Per-type info card (collapsed by default) */}
+        <NodeInfoCard type={entity.type} />
+
         {/* Status banner */}
         {entity.status !== 'healthy' && (
           <div className="flex items-center gap-2 rounded-lg px-3 py-2 mb-3"
@@ -556,14 +559,19 @@ function Legend() {
 // ── Node header ───────────────────────────────────────────────────────────────
 
 function NodeHeader({ entity, onLabelChange, onKill, onRestore, onStress, onClone, onDelete }: any) {
-  const color    = SimulationConstants.COLOR_BY_TYPE[entity.type] || '#6366f1';
-  const iconName = SimulationConstants.ICON_BY_TYPE[entity.type]  || 'Server';
-  const IconComp = (Icons as any)[iconName];
-  const desc     = COMPONENT_REGISTRY.find(c => c.type === entity.type)?.description ?? '';
+  const color      = SimulationConstants.COLOR_BY_TYPE[entity.type] || '#6366f1';
+  const iconName   = SimulationConstants.ICON_BY_TYPE[entity.type]  || 'Server';
+  const IconComp   = (Icons as any)[iconName];
+  const desc       = COMPONENT_REGISTRY.find(c => c.type === entity.type)?.description ?? '';
+  const costPerHr  = SimulationConstants.COST_PER_HOUR_BY_TYPE[entity.type] ?? 0;
+  const costSource = SimulationConstants.COST_SOURCE_BY_TYPE[entity.type] ?? '';
+  const replicas   = entity.config?.replicas ?? 1;
+  const totalCost  = (costPerHr * replicas).toFixed(3);
 
   return (
     <div style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', padding: '12px', background: `linear-gradient(135deg, ${color}10, transparent)` }}>
-      <div className="flex items-center gap-2.5 mb-3">
+      {/* Icon + label row */}
+      <div className="flex items-center gap-2.5 mb-2">
         <div className="flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center"
           style={{ background: `${color}20`, border: `1px solid ${color}40`, boxShadow: `0 0 14px ${color}30` }}>
           {IconComp && <IconComp size={16} style={{ color }} />}
@@ -577,6 +585,17 @@ function NodeHeader({ entity, onLabelChange, onKill, onRestore, onStress, onClon
           <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, marginTop: 2 }} className="truncate">{desc}</div>
         </div>
       </div>
+
+      {/* Cost chip */}
+      {costPerHr > 0 && (
+        <div className="flex items-center gap-1.5 mb-2.5"
+          title={`Based on ${costSource} pricing (us-east-1, Apr 2025)`}>
+          <Icons.DollarSign size={10} color="#34d399" />
+          <span style={{ color: '#34d399', fontSize: 10, fontWeight: 700 }}>${totalCost}/hr</span>
+          <span style={{ color: 'rgba(255,255,255,0.25)', fontSize: 9 }}>× {replicas} replica{replicas !== 1 ? 's' : ''}</span>
+          <span style={{ color: 'rgba(255,255,255,0.18)', fontSize: 9, marginLeft: 2 }}>· {costSource}</span>
+        </div>
+      )}
 
       {/* Action row */}
       <div className="flex gap-1.5">
@@ -634,4 +653,298 @@ const PROTO_INFO: Record<string, string> = {
 
 function ProtocolExplainer({ protocol }: { protocol: string }) {
   return <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 10 }}>{PROTO_INFO[protocol] ?? ''}</p>;
+}
+
+// ── Per-node info knowledge base ─────────────────────────────────────────────
+
+interface NodeInfoEntry {
+  what:      string;           // 1-sentence summary
+  purpose:   string;          // what problem it solves
+  examples:  string[];        // real-world services
+  tips:      string[];        // configuration / best-practice tips
+  costBasis: string;          // where the $$/hr number comes from
+  perf:      string;          // performance characteristic
+}
+
+const NODE_INFO: Partial<Record<string, NodeInfoEntry>> = {
+  [NodeType.CLIENT]: {
+    what:      'Represents end-users accessing your system via browser or mobile app.',
+    purpose:   'The origin of all traffic. Not a deployable service — a traffic source.',
+    examples:  ['Web browser', 'iOS / Android app', 'Desktop client', 'Partner API consumer'],
+    tips:      ['Increase Users count to simulate load', 'Connect to DNS, CDN or API Gateway as first hop'],
+    costBasis: 'No cloud cost — this node represents user devices.',
+    perf:      'No latency — traffic originates here.',
+  },
+  [NodeType.DNS]: {
+    what:      'Translates domain names to IP addresses before any HTTP connection is made.',
+    purpose:   'Single global resolver that routes traffic to the correct region or load balancer.',
+    examples:  ['AWS Route 53 (~$0.50/zone/month + $0.40/M queries)', 'Cloudflare DNS (free)', 'Google Cloud DNS'],
+    tips:      ['Use low TTLs (60s) for fast failover', 'Enable health checks for latency-based routing', 'GeoDNS routes users to nearest region'],
+    costBasis: '~AWS Route 53: $0.50/hosted zone + $0.40/million queries ≈ $0.01/hr for moderate traffic.',
+    perf:      'Adds 10–50 ms on first connection; cached by OS/browser for subsequent requests.',
+  },
+  [NodeType.CDN]: {
+    what:      'Serves static assets (JS, CSS, images, video) from edge nodes close to users.',
+    purpose:   'Reduces origin server load and cuts latency for users globally.',
+    examples:  ['Cloudflare ($0.01–0.08/GB)', 'AWS CloudFront ($0.0085–0.12/GB)', 'Fastly', 'Akamai'],
+    tips:      ['Set long Cache-Control headers (1 year) for immutable assets', 'Use cache-busting filenames instead of short TTLs', 'Enable Brotli/gzip compression at the edge'],
+    costBasis: '~Cloudflare Pro/Business: $0.01–0.08/GB egress. Simulated at ~$0.08/hr per PoP equivalent.',
+    perf:      '5–30ms latency from edge (vs 80–200ms from origin). Handles 50K+ RPS per edge node.',
+  },
+  [NodeType.WAF]: {
+    what:      'Inspects HTTP traffic and blocks malicious requests before they reach your app.',
+    purpose:   'Stops SQLi, XSS, DDoS L7 attacks, bot traffic and OWASP Top 10 threats.',
+    examples:  ['AWS WAF ($5/WebACL/month + $1/M requests)', 'Cloudflare WAF', 'Imperva', 'ModSecurity'],
+    tips:      ['Enable OWASP core rule set', 'Rate-limit by IP to block credential stuffing', 'Review false positives in audit mode before blocking mode'],
+    costBasis: '~AWS WAF: $5/WebACL/month + $1/million requests ≈ $0.05/hr for high-traffic sites.',
+    perf:      'Adds 1–5ms overhead per request. Worth the cost for public-facing services.',
+  },
+  [NodeType.LOAD_BALANCER]: {
+    what:      'Distributes incoming requests evenly across multiple backend instances.',
+    purpose:   'Prevents single-server overload, enables zero-downtime deploys and horizontal scaling.',
+    examples:  ['AWS ALB (~$0.018/hr + $0.008/LCU)', 'AWS NLB (~$0.006/LCU)', 'NGINX', 'HAProxy', 'GCP Cloud LB'],
+    tips:      ['Use health checks to remove unhealthy nodes instantly', 'Enable sticky sessions only if truly stateful', 'Prefer Layer 7 (ALB) for HTTP; Layer 4 (NLB) for TCP/UDP'],
+    costBasis: '~AWS ALB: $0.018/hr base + $0.008/LCU. Estimated $0.02–0.05/hr for typical API traffic.',
+    perf:      '<1ms added latency. Scales to millions of requests/sec with multiple LCU.',
+  },
+  [NodeType.API_GATEWAY]: {
+    what:      'Central entry point for all API calls — handles routing, auth, rate limiting and transforms.',
+    purpose:   'Decouples clients from backend services; enforces policies in one place.',
+    examples:  ['AWS API Gateway (~$3.50/million calls)', 'Kong ($0.04/hr + usage)', 'Apigee', 'Traefik'],
+    tips:      ['Enable caching at the Gateway layer to cut downstream load by 80%+', 'Use JWT validation at the Gateway, not inside every microservice', 'Implement circuit breakers per route'],
+    costBasis: '~AWS API GW HTTP API: $1/million requests. REST API: $3.50/million. Estimated $0.04/hr.',
+    perf:      '5–15ms added latency. Cacheable responses can be <1ms.',
+  },
+  [NodeType.APP_SERVER]: {
+    what:      'Runs your core application logic — handles business rules and orchestrates services.',
+    purpose:   'The heart of your system. Processes requests, calls databases and downstream APIs.',
+    examples:  ['AWS EC2 t3.medium ($0.0416/hr)', 'ECS Fargate (vCPU $0.04/hr)', 'GCP e2-medium ($0.033/hr)', 'Node.js / Go / Java / Python'],
+    tips:      ['Keep stateless — store sessions in Redis, not in-memory', 'Run ≥2 replicas for HA', 'Profile under load: 70% CPU is the knee of the latency curve'],
+    costBasis: '~AWS EC2 t3.medium: $0.0416/hr (on-demand). Savings Plans reduce by ~30%.',
+    perf:      '20–80ms typical response time. Scales linearly with replicas up to database bottleneck.',
+  },
+  [NodeType.MICROSERVICE]: {
+    what:      'Small, independently deployable service owning a single bounded context.',
+    purpose:   'Enables teams to deploy independently, scale per-service and choose different tech stacks.',
+    examples:  ['User Service', 'Order Service', 'Notification Service', 'AWS Lambda ($0.0000166667/GB-second)'],
+    tips:      ['Define clear API contracts (OpenAPI/Protobuf) between services', 'Avoid synchronous chains >3 hops — use events/queues instead', 'Each service should own its own database (no shared DB)'],
+    costBasis: '~AWS ECS Fargate 0.25vCPU/0.5GB: ~$0.0127/hr. Similar to App Server at smaller compute.',
+    perf:      '15–50ms typical. Network hops between services add 1–5ms each on same VPC.',
+  },
+  [NodeType.CACHE]: {
+    what:      'In-memory key-value store for frequently read data — eliminates redundant DB queries.',
+    purpose:   'Reduces database load by 80–95%, cuts latency from 50ms to <1ms for cached data.',
+    examples:  ['AWS ElastiCache Redis (cache.t3.micro $0.017/hr)', 'Upstash Redis ($0.20/100K commands)', 'Memcached', 'Valkey'],
+    tips:      ['Target 85–95% hit rate — below 70% means your key strategy needs work', 'Set appropriate TTLs — too long = stale data; too short = low hit rate', 'Use cache-aside pattern; write-through for critical data'],
+    costBasis: '~AWS ElastiCache cache.r6g.large: $0.166/hr. cache.t3.micro: $0.017/hr for dev/test.',
+    perf:      '<0.5ms read latency in LAN. 100K+ ops/sec per node. Dramatically reduces P99.',
+  },
+  [NodeType.DATABASE]: {
+    what:      'Persistent structured data store — source of truth for all application state.',
+    purpose:   'Durable, ACID-compliant storage with query capabilities and indexing.',
+    examples:  ['AWS RDS PostgreSQL db.t3.medium ($0.068/hr)', 'PlanetScale', 'Neon', 'MongoDB Atlas ($0.09/hr M10)'],
+    tips:      ['Add read replicas to scale reads independently from writes', 'Index all foreign keys and columns used in WHERE/ORDER BY', 'Connection pooling (PgBouncer) is essential beyond 100 concurrent users'],
+    costBasis: '~AWS RDS db.t3.medium PostgreSQL: $0.068/hr. Multi-AZ doubles cost. Aurora is ~10% more.',
+    perf:      '5–20ms simple queries, 50–500ms complex joins. Max ~3K–5K concurrent connections.',
+  },
+  [NodeType.QUEUE]: {
+    what:      'Async message broker that decouples producers from consumers.',
+    purpose:   'Absorbs traffic spikes, enables reliable background processing and event-driven patterns.',
+    examples:  ['AWS SQS ($0.40/million messages)', 'Apache Kafka ($0.04/hr self-hosted)', 'RabbitMQ', 'GCP Pub/Sub'],
+    tips:      ['Use dead-letter queues (DLQ) to handle poison messages', 'Set message visibility timeout > max processing time', 'Kafka is best for ordered, replayable event logs; SQS for simple task queues'],
+    costBasis: '~AWS SQS: $0.40/million messages. MSK (managed Kafka): ~$0.21/broker/hr.',
+    perf:      'Publish: <5ms. Consume: <10ms. Kafka handles 1M+ events/sec per broker.',
+  },
+  [NodeType.WORKER]: {
+    what:      'Background job processor that consumes tasks from a queue asynchronously.',
+    purpose:   'Handles CPU-intensive or slow work (emails, image processing, reports) off the request path.',
+    examples:  ['AWS Lambda ($0.0000166667/GB-second)', 'ECS Fargate worker', 'Celery + Redis', 'BullMQ + Node.js'],
+    tips:      ['Scale workers based on queue depth, not CPU/memory', 'Implement idempotency — workers may process the same message twice', 'Set concurrency limits per worker to avoid DB connection exhaustion'],
+    costBasis: '~AWS Lambda: $0.20/million invocations + $0.0000166667/GB-second. EC2 t3.small ~$0.021/hr.',
+    perf:      '30–300ms typical job. Scale-out is linear — double workers = double throughput.',
+  },
+  [NodeType.STORAGE]: {
+    what:      'Object storage for unstructured files — images, videos, backups, logs.',
+    purpose:   'Infinitely scalable, durable (11 nines) storage separate from compute.',
+    examples:  ['AWS S3 ($0.023/GB-month + $0.0004/1K GET)', 'GCS ($0.020/GB)', 'Cloudflare R2 (no egress fees)', 'Azure Blob'],
+    tips:      ['Always serve user-facing files through a CDN, never directly from S3', 'Use S3 lifecycle rules to move cold data to Glacier (~$0.004/GB)', 'Enable versioning for user-uploaded content'],
+    costBasis: '~AWS S3: $0.023/GB-month storage + $0.09/GB egress. Simulated at ~$0.02/hr for typical usage.',
+    perf:      'First byte: 50–200ms. Throughput: up to 5500 GET/sec per prefix with no configuration.',
+  },
+  [NodeType.SERVICE_MESH]: {
+    what:      'Infrastructure layer that manages all service-to-service communication.',
+    purpose:   'Adds mTLS, distributed tracing, traffic policies and observability without app code changes.',
+    examples:  ['Istio (sidecar Envoy proxy)', 'Linkerd (~$0.03/hr compute overhead)', 'AWS App Mesh', 'Consul Connect'],
+    tips:      ['Start with observability-only mode before enabling mTLS to avoid breaking changes', 'Sidecar proxies add ~1-2ms per hop and ~50MB RAM per pod', 'Use traffic splitting for canary deployments (e.g. 5% → new version)'],
+    costBasis: '~Istio control plane: ~0.5 vCPU / 2GB RAM. Sidecar overhead ≈ $0.03/hr across cluster.',
+    perf:      '1–2ms added per service hop. Enables zero-trust networking without application changes.',
+  },
+  [NodeType.CIRCUIT_BREAKER]: {
+    what:      'Detects downstream failures and stops sending traffic to prevent cascading crashes.',
+    purpose:   'When error rate exceeds a threshold, the circuit "opens" and returns fallback responses.',
+    examples:  ['Hystrix (Netflix OSS)', 'Resilience4j (Java)', 'Polly (.NET)', 'Built-in in Istio/Linkerd'],
+    tips:      ['Set error threshold at 50%+ over a 10-second window to avoid false trips', 'Half-open state: allow 1 test request before fully closing the circuit', 'Define fallback responses — cache, default value or friendly error'],
+    costBasis: 'No direct cloud cost — runs as library code inside your services or as a sidecar.',
+    perf:      '<1ms overhead when circuit is closed. Returns instantly (0ms) when open (fallback path).',
+  },
+  [NodeType.SEARCH]: {
+    what:      'Full-text search and analytics engine with inverted index for sub-second queries.',
+    purpose:   'Powers search bars, log analytics, recommendation engines and faceted filtering.',
+    examples:  ['AWS OpenSearch ($0.12/hr m5.large.search)', 'Elastic Cloud ($0.12+/hr)', 'Meilisearch ($0.07/hr)', 'Typesense'],
+    tips:      ['Use write-through indexing — index on every DB write, not batch jobs', 'Tune replicas/shards for your document count (1 shard per 20–50GB)', 'Avoid wildcard-prefix queries — they disable index usage'],
+    costBasis: '~AWS OpenSearch m5.large: $0.12/hr. Elastic Cloud 4GB RAM cluster: ~$0.12/hr on GCP.',
+    perf:      '5–30ms full-text queries. Handles millions of documents. Scales writes with replica count.',
+  },
+  [NodeType.MONITOR]: {
+    what:      'Observability stack collecting metrics, logs and distributed traces.',
+    purpose:   'Without monitoring you are flying blind — needed to detect, diagnose and alert on issues.',
+    examples:  ['Datadog (~$15/host/month ≈ $0.02/hr)', 'Grafana + Prometheus (self-hosted)', 'New Relic', 'AWS CloudWatch'],
+    tips:      ['Define SLOs (99.9% availability, P99 <500ms) before setting alerts', 'Alert on symptoms (error rate, latency) not causes (CPU %)', 'Retain raw metrics for 15 days; downsampled for 1 year'],
+    costBasis: '~Datadog Infrastructure: $15/host/month ≈ $0.02/hr. Prometheus self-hosted: compute only.',
+    perf:      'Scrape interval 15–60s. Alerting latency 30–90s. Near-zero impact on observed services.',
+  },
+  [NodeType.AUTH]: {
+    what:      'Handles authentication (who are you?) and authorization (what can you do?).',
+    purpose:   'Centralizes identity management, token issuance and access policies.',
+    examples:  ['Auth0 ($0.0055/MAU free up to 7K)', 'AWS Cognito ($0.0055/MAU)', 'Keycloak (self-hosted)', 'Supabase Auth (free up to 50K MAU)'],
+    tips:      ['Validate JWTs locally (~0.1ms) instead of introspection calls (~20ms) — cache public keys', 'Use short-lived access tokens (15min) + long refresh tokens (7 days)', 'Add MFA for admin routes; skip for low-risk reads'],
+    costBasis: '~Auth0/Cognito: $0.0055/MAU beyond free tier. For high-MAU, self-hosted Keycloak is cheaper.',
+    perf:      'JWT validation: <1ms. Token issuance (login): 50–150ms. Cache tokens on client to avoid re-auth.',
+  },
+  [NodeType.EMAIL]: {
+    what:      'Transactional email delivery service for notifications, receipts and alerts.',
+    purpose:   'Reliable email requires dedicated infrastructure — ISP reputation and deliverability matter.',
+    examples:  ['AWS SES ($0.10/1K emails)', 'SendGrid ($0.0006/email on Pro)', 'Postmark ($1.25/1K)', 'Resend ($0.80/1K)'],
+    tips:      ['Always send from a verified domain with SPF + DKIM + DMARC records', 'Use separate IP pools for transactional vs marketing emails', 'Bounce rate >5% will get your domain blacklisted'],
+    costBasis: '~AWS SES: $0.10/1,000 emails + $0.12/GB attachments. Simulated at ~$0.02/hr for active systems.',
+    perf:      '50–200ms to send via API. Delivery to inbox: 1–30 seconds. Bulk sending is rate-limited.',
+  },
+  [NodeType.PAYMENT]: {
+    what:      'Payment processing integration for card charges, subscriptions and payouts.',
+    purpose:   'Handles PCI DSS compliance, fraud detection, 3DS authentication and currency conversion.',
+    examples:  ['Stripe (2.9% + $0.30/charge)', 'Adyen (0.3% + €0.13/charge)', 'Braintree (2.59% + $0.49)', 'PayPal'],
+    tips:      ['Never store raw card data — use hosted fields or Stripe Elements only', 'Implement idempotency keys to prevent duplicate charges on retries', 'Use Stripe Radar or similar for ML fraud scoring'],
+    costBasis: '~Stripe: 2.9% + $0.30/transaction — no monthly fee. Infrastructure cost ~$0.05/hr for gateway proxy.',
+    perf:      '120–800ms per charge (includes fraud scoring + 3DS). Webhook delivery: 1–10 seconds.',
+  },
+};
+
+// ── NodeInfoCard — collapsible per-type description ───────────────────────────
+
+function NodeInfoCard({ type }: { type: string }) {
+  const [open, setOpen] = useState(false);
+  const info = NODE_INFO[type];
+  if (!info) return null;
+
+  return (
+    <div style={{
+      border: '1px solid rgba(99,102,241,0.2)',
+      borderRadius: 10,
+      marginBottom: 8,
+      overflow: 'hidden',
+    }}>
+      {/* Header */}
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        style={{
+          width: '100%',
+          background: open ? 'rgba(99,102,241,0.1)' : 'rgba(99,102,241,0.05)',
+          padding: '7px 10px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          cursor: 'pointer',
+          border: 'none',
+          transition: 'background 0.15s',
+        }}
+      >
+        <Icons.BookOpen size={11} color="#818cf8" />
+        <span style={{ color: '#818cf8', fontSize: 11, fontWeight: 600, flex: 1, textAlign: 'left' }}>
+          What is this? How to configure it
+        </span>
+        <Icons.ChevronDown
+          size={11}
+          style={{
+            color: 'rgba(129,140,248,0.6)',
+            transform: open ? 'rotate(0deg)' : 'rotate(-90deg)',
+            transition: 'transform 0.15s',
+          }}
+        />
+      </button>
+
+      {/* Content */}
+      {open && (
+        <div style={{ padding: '10px 12px', background: 'rgba(7,7,20,0.6)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+
+          {/* What it is */}
+          <p style={{ color: 'rgba(255,255,255,0.75)', fontSize: 11, lineHeight: 1.6, margin: 0 }}>
+            {info.what}
+          </p>
+
+          {/* Purpose */}
+          <div>
+            <span style={{ color: 'rgba(99,102,241,0.8)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Why use it</span>
+            <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11, lineHeight: 1.5, margin: '3px 0 0' }}>{info.purpose}</p>
+          </div>
+
+          {/* Performance */}
+          <div>
+            <span style={{ color: 'rgba(99,102,241,0.8)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Performance</span>
+            <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11, lineHeight: 1.5, margin: '3px 0 0' }}>{info.perf}</p>
+          </div>
+
+          {/* Real services */}
+          <div>
+            <span style={{ color: 'rgba(99,102,241,0.8)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Real-world services</span>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 6px', marginTop: 4 }}>
+              {info.examples.map(ex => (
+                <span key={ex} style={{
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  borderRadius: 4,
+                  padding: '2px 6px',
+                  fontSize: 10,
+                  color: 'rgba(255,255,255,0.5)',
+                }}>
+                  {ex}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* Tips */}
+          <div>
+            <span style={{ color: 'rgba(99,102,241,0.8)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Config tips</span>
+            <ul style={{ margin: '4px 0 0', paddingLeft: 0, listStyle: 'none' }}>
+              {info.tips.map(tip => (
+                <li key={tip} style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, lineHeight: 1.5, display: 'flex', gap: 5, marginBottom: 2 }}>
+                  <span style={{ color: '#818cf8', flexShrink: 0 }}>›</span>
+                  {tip}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Cost basis */}
+          <div style={{
+            background: 'rgba(16,185,129,0.06)',
+            border: '1px solid rgba(16,185,129,0.2)',
+            borderRadius: 6,
+            padding: '6px 8px',
+            display: 'flex',
+            gap: 6,
+            alignItems: 'flex-start',
+          }}>
+            <Icons.DollarSign size={11} color="#34d399" style={{ flexShrink: 0, marginTop: 1 }} />
+            <div>
+              <span style={{ color: '#34d399', fontSize: 10, fontWeight: 700 }}>Cost basis</span>
+              <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 10, margin: '2px 0 0', lineHeight: 1.4 }}>{info.costBasis}</p>
+            </div>
+          </div>
+
+        </div>
+      )}
+    </div>
+  );
 }

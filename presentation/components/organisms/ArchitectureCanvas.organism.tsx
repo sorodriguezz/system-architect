@@ -18,6 +18,7 @@ import { TopBar } from './TopBar.organism';
 import { ComponentLibrary } from './ComponentLibrary.organism';
 import { ConfigPanel } from './ConfigPanel.organism';
 import { MetricsPanel } from './MetricsPanel.organism';
+import { InsightsPanel } from './InsightsPanel.organism';
 import * as Icons from 'lucide-react';
 
 // ── ReactFlow registries ────────────────────────────────────────────────────
@@ -62,7 +63,7 @@ export function ArchitectureCanvas() {
   const selectEdge      = useArchitectureStore(s => s.selectEdge);
 
   const [leftOpen,  setLeftOpen]  = useState(true);
-  const [rightTab,  setRightTab]  = useState<'config' | 'metrics'>('config');
+  const [rightTab,  setRightTab]  = useState<'config' | 'metrics' | 'insights'>('config');
 
   const onDragStart = useCallback((e: React.DragEvent, type: string) => {
     e.dataTransfer.setData('application/reactflow', type);
@@ -306,7 +307,9 @@ export function ArchitectureCanvas() {
             onChange={setRightTab}
           />
           <div style={{ flex: 1, overflow: 'hidden' }}>
-            {rightTab === 'config' ? <ConfigPanel /> : <MetricsPanel />}
+            {rightTab === 'config'   && <ConfigPanel />}
+            {rightTab === 'metrics'  && <MetricsPanel />}
+            {rightTab === 'insights' && <InsightsPanel />}
           </div>
         </div>
       </div>
@@ -329,11 +332,20 @@ function ChaosChip() {
 }
 
 function RightPanelTabs({ activeTab, hasSelection, isRunning, onChange }: {
-  activeTab: 'config' | 'metrics';
+  activeTab: 'config' | 'metrics' | 'insights';
   hasSelection: boolean;
   isRunning: boolean;
-  onChange: (t: 'config' | 'metrics') => void;
+  onChange: (t: 'config' | 'metrics' | 'insights') => void;
 }) {
+  const nodes    = useArchitectureStore(s => s.nodes);
+  const edges    = useArchitectureStore(s => s.edges);
+  const alerts   = React.useMemo(() => {
+    // Lazy import to avoid circular — we only need the count
+    const { runAdvisor } = require('@/domain/services/ArchitectureAdvisor.service');
+    return runAdvisor(nodes, edges);
+  }, [nodes, edges]);
+  const criticals = alerts.filter((a: any) => a.severity === 'critical').length;
+
   return (
     <div
       className="flex flex-shrink-0"
@@ -354,25 +366,33 @@ function RightPanelTabs({ activeTab, hasSelection, isRunning, onChange }: {
         pulse={isRunning}
         onClick={() => onChange('metrics')}
       />
+      <TabButton
+        label="Insights"
+        icon={<Icons.Lightbulb size={11} />}
+        active={activeTab === 'insights'}
+        badge={criticals > 0 ? criticals : undefined}
+        onClick={() => onChange('insights')}
+      />
     </div>
   );
 }
 
-function TabButton({ label, icon, active, dot, pulse, onClick }: {
+function TabButton({ label, icon, active, dot, pulse, badge, onClick }: {
   label: string; icon: React.ReactNode; active: boolean;
-  dot?: string; pulse?: boolean; onClick: () => void;
+  dot?: string; pulse?: boolean; badge?: number; onClick: () => void;
 }) {
   return (
     <button
       onClick={onClick}
       className="flex-1 flex items-center justify-center gap-1.5 py-2.5 transition-colors"
       style={{
-        fontSize: 12,
+        fontSize: 11,
         fontWeight: 500,
         color: active ? 'white' : 'rgba(255,255,255,0.4)',
         borderBottom: active ? '2px solid #6366f1' : '2px solid transparent',
         background: 'transparent',
         cursor: 'pointer',
+        position: 'relative',
       }}
     >
       {icon}
@@ -382,6 +402,21 @@ function TabButton({ label, icon, active, dot, pulse, onClick }: {
           className={`w-1.5 h-1.5 rounded-full ${pulse ? 'animate-pulse' : ''}`}
           style={{ background: dot }}
         />
+      )}
+      {badge !== undefined && badge > 0 && (
+        <span style={{
+          background: '#ef4444',
+          color: 'white',
+          fontSize: 8,
+          fontWeight: 800,
+          borderRadius: 10,
+          padding: '1px 4px',
+          lineHeight: 1.4,
+          minWidth: 14,
+          textAlign: 'center',
+        }}>
+          {badge}
+        </span>
       )}
     </button>
   );
