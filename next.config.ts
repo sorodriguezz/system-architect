@@ -6,8 +6,8 @@ const nextConfig: NextConfig = {
   output: 'export',
   // If deploying as a project site (username.github.io/repo),
   // set `basePath` and `assetPrefix` to '/repo-name'
-  // basePath: '/repo-name',
-  // assetPrefix: '/repo-name/',
+  basePath: '/system-architect',
+  assetPrefix: '/system-architect/',
 };
 
 export default nextConfig;
