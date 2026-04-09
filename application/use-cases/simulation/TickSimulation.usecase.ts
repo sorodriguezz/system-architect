@@ -281,7 +281,7 @@ function computeEdgeSimulationData(
 
 function detectEvents(
   nodes: NodeEntity[],
-  spofIds: Set<string>,
+  spofIds: ReadonlySet<string>,
   time: number,
 ): SimulationEvent[] {
   const events: SimulationEvent[] = [];

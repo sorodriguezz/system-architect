@@ -6,7 +6,7 @@ import * as Icons from 'lucide-react';
 
 // ── Icon resolver ────────────────────────────────────────────────────────────
 
-const ICON_MAP: Record<string, React.FC<{ size: number; style?: React.CSSProperties }>> = {
+const ICON_MAP: Record<string, React.ComponentType<any>> = {
   Skull:           Icons.Skull,
   AlertTriangle:   Icons.AlertTriangle,
   Flame:           Icons.Flame,
